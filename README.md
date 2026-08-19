@@ -4,8 +4,9 @@
 
 - 项目名：`WearAI`
 - 包名：`com.foggland.wearai`
-- 最低兼容：**Android 8.1（API 27）**
+- 最低兼容：**Android 6.0（API 23）**
 - 默认模型（调用名）：**`glm-4.7-flash`**
+- 开源协议：**GNU General Public License v3.0（GPL-3.0）**
 
 ---
 
@@ -62,4 +63,14 @@ gradlew.bat :app:assembleDebug
 - 接入地址：`https://open.bigmodel.cn/api/paas/v4/chat/completions`
 - 默认模型：`glm-4.7-flash`
 
-> 以上默认值在「设置 → 接口」中可修改，修改后即时生效并本地保存。
+> 以上默认值在「设置 → 模型管理」中可修改，修改后即时生效并本地保存。
+
+---
+
+## 六、开源许可
+
+本项目基于 **GNU General Public License v3.0（GPL-3.0）** 开源。
+
+你可以自由地使用、修改、复制、分发本软件，但任何基于本软件的衍生作品也**必须**以相同的 GPL-3.0 协议开源。完整许可文本见 [LICENSE](LICENSE) 文件，或访问 https://www.gnu.org/licenses/gpl-3.0.txt 。
+
+> 本项目仅用于学习与技术交流。使用智谱 AI 开放平台 API 时，请遵守 [智谱开放平台服务条款](https://open.bigmodel.cn) 及当地法律法规；API Key 请妥善保管，勿提交到公开仓库。
