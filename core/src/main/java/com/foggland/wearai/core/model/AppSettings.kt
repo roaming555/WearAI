@@ -34,7 +34,7 @@ data class AppSettings(
         const val DEFAULT_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
         const val DEFAULT_MODEL_CALLING_NAME = "glm-4.7-flash"
         const val DEFAULT_TITLE_MODEL_CALLING_NAME = "glm-4-flash"
-        const val DEFAULT_SYSTEM_PROMPT = "你是 WearAI，一个运行在手机与智能手表上的 AI 助手。请使用简体中文，简洁、准确地回答用户的问题。"
+        const val DEFAULT_SYSTEM_PROMPT = "你是 WearAI，一个运行在手机与智能手表上的 AI 助手。请使用简体中文，简洁、准确地回答用户的问题。如需输出公式，请通过标准Latex格式输出"
 
         const val DEFAULT_UI_SCALE = 1.0f
         const val MIN_UI_SCALE = 0.3f
