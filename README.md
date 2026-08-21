@@ -1,4 +1,6 @@
 <div align="center">
+  
+![logo](https://raw.githubusercontent.com/roaming555/WearAI/refs/heads/main/ic_launcher-showmd.png)
 
 # WearAI
 
