@@ -1,8 +1,7 @@
 <div align="center">
-  
-![logo](https://raw.githubusercontent.com/roaming555/WearAI/refs/heads/main/ic_launcher-showmd.png)
 
 ![logo](https://raw.githubusercontent.com/roaming555/WearAI/refs/heads/main/ic_launcher-showmd.png)
+
 # WearAI
 
 轻量的第三方 AI 聊天客户端
