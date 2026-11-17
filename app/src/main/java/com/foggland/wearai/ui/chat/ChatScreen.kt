@@ -82,6 +82,17 @@ fun ChatScreen(
     }
     val appContext = androidx.compose.ui.platform.LocalContext.current
     val multimodalEnabled = activeModel?.multimodal == true
+    // 设备是否有对应的相机应用（没有摄像头的设备不应显示「拍照」）
+    val canTakePhoto = androidx.compose.runtime.remember(appContext) {
+        appContext.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY) &&
+            appContext.packageManager.resolveActivity(
+                android.content.Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE),
+                0,
+            ) != null
+    }
+    var showCameraScreen by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
     var showImageSourceDialog by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
@@ -110,6 +121,11 @@ fun ChatScreen(
         if (success) applyPickedImage(pendingCameraUri)
         pendingCameraUri = null
     }
+
+    fun launchCapture() {
+        showCameraScreen = true
+    }
+
     val trio = LocalSurfaceTrio.current
 
     // 新消息或切换会话时滚动到底部；流式增长由 reverseLayout 锚定底部，不再打断手动上滑
@@ -171,7 +187,7 @@ fun ChatScreen(
             onDismissRequest = { showImageSourceDialog = false },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            com.foggland.wearai.ui.components.ScaledDialogContent(settings.uiScale) {
+            com.foggland.wearai.ui.components.ScaledDialogContent(settings) {
                 androidx.compose.material3.Surface(
                     shape = MaterialTheme.shapes.large,
                     tonalElevation = 6.dp,
@@ -199,25 +215,38 @@ fun ChatScreen(
                                 },
                                 modifier = Modifier.weight(1f),
                             ) { Text("从相册选择") }
-                            androidx.compose.material3.OutlinedButton(
-                                onClick = {
-                                    showImageSourceDialog = false
-                                    val dir = java.io.File(appContext.cacheDir, "camera").apply { mkdirs() }
-                                    val file = java.io.File(dir, "shot_" + System.currentTimeMillis() + ".jpg")
-                                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                                        appContext,
-                                        appContext.packageName + ".fileprovider",
-                                        file,
-                                    )
-                                    pendingCameraUri = uri
-                                    cameraLauncher.launch(uri)
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("拍照") }
+                            if (canTakePhoto) {
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = {
+                                        showImageSourceDialog = false
+                                        launchCapture()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) { Text("拍照") }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    // 内置拍照页（全屏）
+    if (showCameraScreen) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showCameraScreen = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            CameraCaptureScreen(
+                onClose = { showCameraScreen = false },
+                onCaptured = { uri ->
+                    showCameraScreen = false
+                    applyPickedImage(uri)
+                },
+            )
         }
     }
 

@@ -221,6 +221,8 @@ class SettingsRepository(context: Context) {
                 callingName = "glm-4.6v-flash",
                 apiKey = AppSettings.DEFAULT_API_KEY,
                 endpointUrl = AppSettings.DEFAULT_ENDPOINT,
+                // V 系列为多模态（支持图片输入）
+                multimodal = true,
             ),
             ModelConfig(
                 id = "glm-4.5-flash",

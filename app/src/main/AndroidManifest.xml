@@ -3,6 +3,16 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 内置拍照：仅拍照时申请，拒绝也不影响其它功能 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- 拍照是可选功能：声明为非必需，避免把无摄像头的设备挡在商店外 -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <application
         android:allowBackup="true"

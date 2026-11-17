@@ -205,7 +205,7 @@ fun ModelManagementScreen(
             onDismissRequest = { showEditor = false },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            ScaledDialogContent(settings.uiScale) {
+            ScaledDialogContent(settings) {
                 Surface(
                     shape = MaterialTheme.shapes.large,
                     tonalElevation = 6.dp,
@@ -307,7 +307,7 @@ fun ModelManagementScreen(
             onDismissRequest = { deleting = null },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            ScaledDialogContent(settings.uiScale) {
+            ScaledDialogContent(settings) {
                 Surface(
                     shape = MaterialTheme.shapes.large,
                     tonalElevation = 6.dp,
