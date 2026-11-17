@@ -17,7 +17,16 @@ sealed class MarkdownBlock {
     data class Blockquote(val text: String) : MarkdownBlock()
     data class MathBlock(val latex: String) : MarkdownBlock()
     data object HorizontalRule : MarkdownBlock()
+
+    /** Markdown 表格：表头 + 若干数据行（元素已去除两端的 | 与空格） */
+    data class Table(
+        val header: List<String>,
+        val alignments: List<TableCellAlign>,
+        val rows: List<List<String>>,
+    ) : MarkdownBlock()
 }
+
+enum class TableCellAlign { START, CENTER, END }
 
 /** 段落内的一个片段：普通文本或行内公式。 */
 sealed class InlineSegment {
@@ -26,23 +35,141 @@ sealed class InlineSegment {
 }
 
 private val INLINE_PATTERN = Regex(
-    """\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|`([^`]+)`|\[([^\]]+)]\(([^)]+)\)"""
+    """\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|`([^`]+)`|\[([^\]]+)]\(([^)]+)\)|\*\*\*([^*]+)\*\*\*"""
 )
 private val INLINE_MATH_PATTERN = Regex("""(?<!\$)\$([^$\n]+?)\$(?!\$)""")
 private val LIST_PATTERN = Regex("""[-*+] .+""")
 private val ORDERED_PATTERN = Regex("""\d+\. .+""")
 
+/** JLaTeXMath 能渲染的数学环境；其余 LaTeX 环境（itemize 等）视为文档结构，不按公式处理。 */
+private val LATEX_MATH_ENVIRONMENTS = setOf(
+    "matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix",
+    "smallmatrix", "array", "subarray", "cases", "aligned", "alignedat",
+    "split", "gathered", "equation", "equation*", "align", "align*",
+    "gather", "gather*", "eqnarray", "eqnarray*", "multline", "multline*",
+)
+
+/** LaTeX 文档结构命令 → Markdown，用于模型误输出整篇文档时的降级显示。
+ *  注意：花括号必须转义。Android 5.x 的 ICU 正则实现不容忍未转义的 `}`，
+ *  否则整份正则会在类初始化时抛异常导致崩溃。 */
+private val LATEX_DOC_PATTERNS = listOf(
+    Regex("""\\documentclass(\[[^\]]*\])?\{[^}]*\}""") to "",
+    Regex("""\\usepackage(\[[^\]]*\])?\{[^}]*\}""") to "",
+    Regex("""\\begin\{document\}""") to "",
+    Regex("""\\end\{document\}""") to "",
+    Regex("""\\begin\{(itemize|enumerate|description)\}""") to "",
+    Regex("""\\end\{(itemize|enumerate|description)\}""") to "",
+    Regex("""\\section\*?\{([^}]*)\}""") to "## \$1",
+    Regex("""\\subsection\*?\{([^}]*)\}""") to "### \$1",
+    Regex("""\\subsubsection\*?\{([^}]*)\}""") to "#### \$1",
+    Regex("""\\item\s+""") to "- ",
+    Regex("""\\textbf\{([^}]*)\}""") to "**\$1**",
+    Regex("""\\textit\{([^}]*)\}""") to "*\$1*",
+)
+
+private fun latexEnvironmentOf(trimmed: String): String? =
+    if (trimmed.startsWith("\\begin{")) {
+        trimmed.removePrefix("\\begin{").substringBefore("}").trim()
+    } else {
+        null
+    }
+
+private fun isLatexMathEnvironment(trimmed: String): Boolean =
+    latexEnvironmentOf(trimmed)?.let { it in LATEX_MATH_ENVIRONMENTS } == true
+
+/** 把整篇 LaTeX 文档的骨架转成 Markdown，避免直接显示 \section、\begin{itemize} 等原始命令。 */
+private fun normalizeLatexDocument(text: String): String {
+    if (!text.contains("\\documentclass") &&
+        !text.contains("\\begin{document}") &&
+        !text.contains("\\section")
+    ) {
+        return text
+    }
+    val parts = text.split("```")
+    if (parts.size == 1) return applyLatexDocPatterns(text)
+    // 按 ``` 切分后，偶数段在代码块之外——只有这些段才做降级替换，
+    // 否则会把代码块里的 LaTeX 源码也改掉。
+    return buildString {
+        parts.forEachIndexed { index, part ->
+            if (index > 0) append("```")
+            if (index % 2 == 0) append(applyLatexDocPatterns(part)) else append(part)
+        }
+    }
+}
+
+private fun applyLatexDocPatterns(text: String): String {
+    var result = text
+    for ((pattern, replacement) in LATEX_DOC_PATTERNS) {
+        result = pattern.replace(result, replacement)
+    }
+    return result
+}
+
 /**
  * 将 Markdown 解析为块列表，供 [MarkdownContent] 渲染。
  */
+
+/** 是否是表格分隔行（|---|---| 形式） */
+private fun isTableSeparator(line: String): Boolean {
+    val t = line.trim()
+    if (!t.startsWith("|") || !t.endsWith("|")) return false
+    val cells = t.trim('|').split("|")
+    if (cells.isEmpty()) return false
+    return cells.all { cell ->
+        val c = cell.trim()
+        c.isNotEmpty() && c.all { it == '-' || it == ':' } && c.count { it == '-' } >= 1
+    }
+}
+
+/** 拆分表格行，去除两端的 | 并 trim；支持 \| 转义 */
+private fun splitTableRow(line: String): List<String> {
+    val t = line.trim().removePrefix("|").removeSuffix("|")
+    val cells = mutableListOf<String>()
+    val sb = StringBuilder()
+    var escaped = false
+    for (ch in t) {
+        when {
+            escaped -> { sb.append(ch); escaped = false }
+            ch == '\\' -> escaped = true
+            ch == '|' -> { cells.add(sb.toString().trim()); sb.clear() }
+            else -> sb.append(ch)
+        }
+    }
+    cells.add(sb.toString().trim())
+    return cells
+}
+
+private fun parseTableAlignments(line: String): List<TableCellAlign> =
+    line.trim().trim('|').split("|").map { cell ->
+        val c = cell.trim()
+        when {
+            c.startsWith(":") && c.endsWith(":") -> TableCellAlign.CENTER
+            c.endsWith(":") -> TableCellAlign.END
+            else -> TableCellAlign.START
+        }
+    }
+
 fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
     val blocks = mutableListOf<MarkdownBlock>()
-    val lines = markdown.split("\n")
+    val lines = normalizeLatexDocument(markdown).split("\n")
     var i = 0
     while (i < lines.size) {
         val raw = lines[i]
         val trimmed = raw.trim()
         when {
+            // 表格：至少两行，第二行是 |---| 分隔行
+            trimmed.startsWith("|") && i + 1 < lines.size && isTableSeparator(lines[i + 1]) -> {
+                val header = splitTableRow(trimmed)
+                val alignments = parseTableAlignments(lines[i + 1])
+                i += 2
+                val rows = mutableListOf<List<String>>()
+                while (i < lines.size && lines[i].trim().startsWith("|")) {
+                    rows.add(splitTableRow(lines[i].trim()))
+                    i++
+                }
+                blocks.add(MarkdownBlock.Table(header, alignments, rows))
+            }
+
             trimmed.startsWith("```") -> {
                 val language = trimmed.removePrefix("```").trim()
                 val codeLines = mutableListOf<String>()
@@ -71,6 +198,55 @@ fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
                         i++
                     }
                     sb.toString().trim()
+                }
+                blocks.add(MarkdownBlock.MathBlock(latex))
+                i++
+            }
+
+            trimmed.startsWith("\\[") -> {
+                // 标准 LaTeX 独立公式：\[...\]
+                val latex = if (trimmed.endsWith("\\]") && trimmed.length > 4) {
+                    trimmed.removePrefix("\\[").removeSuffix("\\]").trim()
+                } else {
+                    val sb = StringBuilder()
+                    val rest = trimmed.removePrefix("\\[")
+                    if (rest.isNotBlank()) sb.append(rest)
+                    i++
+                    while (i < lines.size) {
+                        val line = lines[i]
+                        if (line.trim().endsWith("\\]")) {
+                            val before = line.substringBeforeLast("\\]")
+                            if (before.isNotBlank()) {
+                                if (sb.isNotEmpty()) sb.append('\n')
+                                sb.append(before)
+                            }
+                            break
+                        }
+                        if (sb.isNotEmpty()) sb.append('\n')
+                        sb.append(line)
+                        i++
+                    }
+                    sb.toString().trim()
+                }
+                blocks.add(MarkdownBlock.MathBlock(latex))
+                i++
+            }
+
+            isLatexMathEnvironment(trimmed) -> {
+                // 环境式独立公式：\begin{matrix}...\end{matrix}、\begin{equation}... 等
+                val env = latexEnvironmentOf(trimmed).orEmpty()
+                val latex = if (trimmed.contains("\\end{$env}")) {
+                    trimmed
+                } else {
+                    val content = mutableListOf(raw)
+                    i++
+                    while (i < lines.size) {
+                        val line = lines[i]
+                        content.add(line)
+                        if (line.trim().contains("\\end{$env}")) break
+                        i++
+                    }
+                    content.joinToString("\n").trim()
                 }
                 blocks.add(MarkdownBlock.MathBlock(latex))
                 i++
@@ -136,6 +312,8 @@ private fun isBlockBoundary(trimmed: String): Boolean {
     return trimmed.isEmpty() ||
         trimmed.startsWith("```") ||
         trimmed.startsWith("$$") ||
+        trimmed.startsWith("\\[") ||
+        isLatexMathEnvironment(trimmed) ||
         trimmed.startsWith("# ") ||
         trimmed.startsWith("## ") ||
         trimmed.startsWith("### ") ||
@@ -194,6 +372,13 @@ private fun AnnotatedString.Builder.appendInline(
 
             m.groups[4] != null -> withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                 append(m.groups[4]!!.value)
+            }
+
+            // 加粗 + 斜体
+            m.groups[6] != null -> withStyle(
+                SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic),
+            ) {
+                append(m.groups[6]!!.value)
             }
         }
         last = end

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 拍照临时文件目录：通过 FileProvider 授权给相机 App 写入 -->
+    <cache-path
+        name="camera"
+        path="camera/" />
+</paths>

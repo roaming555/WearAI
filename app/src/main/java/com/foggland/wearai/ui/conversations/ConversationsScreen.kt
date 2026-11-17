@@ -44,9 +44,14 @@ fun ConversationsScreen(
     val current by viewModel.currentConversation.collectAsState()
     val currentId = current?.id
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
+    val floating = com.foggland.wearai.ui.components.LocalFloatingBars.current
+    val topReserve = com.foggland.wearai.ui.components.floatingTopReserve()
+    val topPad = (if (floating) topReserve else 0.dp) + 4.dp
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    com.foggland.wearai.ui.components.AppScreenLayout(
+        topBar = { m ->
+            com.foggland.wearai.ui.components.AppTopBar(
+                modifier = m,
                 title = { Text("对话记录") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -55,12 +60,10 @@ fun ConversationsScreen(
                 },
             )
         },
-    ) { innerPadding ->
+        content = { m ->
         if (conversations.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = m,
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -71,10 +74,9 @@ fun ConversationsScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(vertical = 4.dp),
+                modifier = m,
+                state = listState,
+                contentPadding = PaddingValues(top = topPad, bottom = 8.dp),
             ) {
                 items(conversations.sortedByDescending { it.updatedAt }, key = { it.id }) { conv ->
                     ConversationRow(
@@ -93,7 +95,8 @@ fun ConversationsScreen(
                 }
             }
         }
-    }
+        },
+    )
 }
 
 @Composable

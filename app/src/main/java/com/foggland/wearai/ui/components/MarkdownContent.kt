@@ -21,6 +21,16 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,7 +67,14 @@ fun MarkdownContent(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val bodyStyle = baseTextStyle ?: MaterialTheme.typography.bodyLarge
-    val blocks = remember(markdown) { parseMarkdownBlocks(markdown) }
+    val blocks = remember(markdown) {
+        // 解析失败（含老系统正则兼容问题）时退化为纯文本，绝不因为渲染问题崩溃
+        try {
+            parseMarkdownBlocks(markdown)
+        } catch (t: Throwable) {
+            listOf(MarkdownBlock.Paragraph(markdown))
+        }
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -95,6 +112,8 @@ fun MarkdownContent(
                 is MarkdownBlock.CodeBlock -> CodeBox(language = block.language, code = block.code)
 
                 is MarkdownBlock.MathBlock -> BlockMath(block.latex)
+
+                is MarkdownBlock.Table -> MarkdownTable(block, bodyStyle, colorScheme)
 
                 is MarkdownBlock.HorizontalRule -> HorizontalDivider(color = colorScheme.outlineVariant)
             }
@@ -196,7 +215,7 @@ private fun CodeBox(language: String, code: String) {
     }
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(com.foggland.wearai.ui.theme.LocalSmallRadius.current),
         color = colorScheme.surface,
         border = BorderStroke(1.dp, colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth(),
@@ -250,3 +269,94 @@ private fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("code", text))
 }
+
+
+/** Markdown 表格渲染：表头底色 + 行间分隔线，宽度不足时横向滚动 */
+@Composable
+private fun MarkdownTable(
+    table: MarkdownBlock.Table,
+    bodyStyle: TextStyle,
+    colorScheme: ColorScheme,
+) {
+    val columnCount = maxOf(
+        table.header.size,
+        table.rows.maxOfOrNull { it.size } ?: 0,
+    )
+    if (columnCount == 0) return
+
+    // 每列宽度按内容长度估算，限定上下界
+    val widths = (0 until columnCount).map { col ->
+        val headerLen = table.header.getOrNull(col)?.length ?: 0
+        val maxLen = table.rows.maxOfOrNull { it.getOrNull(col)?.length ?: 0 } ?: 0
+        (maxOf(headerLen, maxLen) * 9).coerceIn(72, 200)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .clip(RoundedCornerShape(com.foggland.wearai.ui.theme.LocalSmallRadius.current))
+            .border(
+                width = 1.dp,
+                color = colorScheme.outlineVariant,
+                shape = RoundedCornerShape(com.foggland.wearai.ui.theme.LocalSmallRadius.current),
+            ),
+    ) {
+        // 表头
+        Row(modifier = Modifier.background(colorScheme.surfaceVariant)) {
+            for (col in 0 until columnCount) {
+                TableCell(
+                    text = table.header.getOrNull(col) ?: "",
+                    width = widths[col].dp,
+                    style = bodyStyle.copy(fontWeight = FontWeight.Bold),
+                    align = table.alignments.getOrNull(col) ?: TableCellAlign.START,
+                    color = colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        HorizontalDivider(color = colorScheme.outlineVariant)
+        // 数据行
+        table.rows.forEachIndexed { rowIndex, row ->
+            Row {
+                for (col in 0 until columnCount) {
+                    TableCell(
+                        text = row.getOrNull(col) ?: "",
+                        width = widths[col].dp,
+                        style = bodyStyle,
+                        align = table.alignments.getOrNull(col) ?: TableCellAlign.START,
+                        color = colorScheme.onSurface,
+                    )
+                }
+            }
+            if (rowIndex != table.rows.lastIndex) {
+                HorizontalDivider(color = colorScheme.outlineVariant.copy(alpha = 0.5f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TableCell(
+    text: String,
+    width: Dp,
+    style: TextStyle,
+    align: TableCellAlign,
+    color: Color,
+) {
+    val textAlign = when (align) {
+        TableCellAlign.START -> TextAlign.Start
+        TableCellAlign.CENTER -> TextAlign.Center
+        TableCellAlign.END -> TextAlign.End
+    }
+    Box(
+        modifier = Modifier
+            .width(width)
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+    ) {
+        InlineMarkdownText(
+            text = text,
+            style = style.copy(color = color, textAlign = textAlign),
+        )
+    }
+}
+

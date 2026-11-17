@@ -34,18 +34,60 @@ class ChatRepository(
         )
     }
 
+
+    /** 有图片且模型支持多模态时，构造 content 数组（base64 Data URL） */
+    private fun buildContent(message: ChatMessage, multimodal: Boolean): Any {
+        val path = message.imagePath
+        if (path.isNullOrBlank() || !multimodal) return message.content
+
+        val dataUrl = readImageAsDataUrl(path) ?: return message.content
+        val parts = mutableListOf<Map<String, Any>>()
+        if (message.content.isNotBlank()) {
+            parts.add(mapOf("type" to "text", "text" to message.content))
+        }
+        parts.add(
+            mapOf(
+                "type" to "image_url",
+                "image_url" to mapOf("url" to dataUrl),
+            ),
+        )
+        return parts
+    }
+
+    private fun readImageAsDataUrl(path: String): String? = try {
+        val file = java.io.File(path)
+        if (!file.exists() || file.length() == 0L) {
+            null
+        } else {
+            val base64 = android.util.Base64.encodeToString(
+                file.readBytes(),
+                android.util.Base64.NO_WRAP,
+            )
+            "data:image/jpeg;base64," + base64
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     private fun buildRequest(settings: AppSettings, history: List<ChatMessage>): ChatCompletionRequest {
         val messages = mutableListOf<MessageDto>()
         if (settings.systemPrompt.isNotBlank()) {
             messages.add(MessageDto(role = ChatRole.SYSTEM.wireName, content = settings.systemPrompt))
         }
+        val multimodal = settingsRepository.models.value
+            .firstOrNull { it.id == settings.activeModelId }
+            ?.multimodal == true
+
         history
-            .filter { it.role != ChatRole.SYSTEM && !it.isError && it.content.isNotBlank() }
+            .filter {
+                it.role != ChatRole.SYSTEM && !it.isError &&
+                    (it.content.isNotBlank() || it.imagePath != null)
+            }
             .forEach { m ->
                 messages.add(
                     MessageDto(
                         role = m.role.wireName,
-                        content = m.content,
+                        content = buildContent(m, multimodal),
                         // 将上一次的思考内容回传给模型以保持上下文连续
                         reasoningContent = if (m.role == ChatRole.ASSISTANT && m.reasoningContent.isNotBlank()) {
                             m.reasoningContent

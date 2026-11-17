@@ -15,4 +15,6 @@ data class ModelConfig(
     val apiKey: String = "",
     /** 该模型专用的接入地址（留空则使用全局默认） */
     val endpointUrl: String = "",
+    /** 是否为多模态模型（支持图片输入） */
+    val multimodal: Boolean = false,
 )

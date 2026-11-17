@@ -27,7 +27,8 @@ data class ChatCompletionRequest(
 
 data class MessageDto(
     val role: String,
-    val content: String,
+    /** 纯文本时为 String；含图片时为 content 数组 */
+    val content: Any,
     @SerializedName("reasoning_content") val reasoningContent: String? = null,
 )
 

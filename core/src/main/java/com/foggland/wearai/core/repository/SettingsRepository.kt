@@ -36,10 +36,19 @@ class SettingsRepository(context: Context) {
     }
 
     private fun loadSettings(): AppSettings {
+        val storedPrompt = prefs.getString(KEY_SYSTEM_PROMPT, AppSettings.DEFAULT_SYSTEM_PROMPT)
+            ?: AppSettings.DEFAULT_SYSTEM_PROMPT
+        // 历史版本的默认提示词会让模型输出整篇 LaTeX 文档，这里自动升级为新默认值；
+        // 用户自定义过的提示词保持不动。
+        val systemPrompt = if (storedPrompt in AppSettings.LEGACY_DEFAULT_PROMPTS) {
+            AppSettings.DEFAULT_SYSTEM_PROMPT
+        } else {
+            storedPrompt
+        }
         return AppSettings(
             apiKey = prefs.getString(KEY_API_KEY, AppSettings.DEFAULT_API_KEY) ?: AppSettings.DEFAULT_API_KEY,
             endpointUrl = prefs.getString(KEY_ENDPOINT, AppSettings.DEFAULT_ENDPOINT) ?: AppSettings.DEFAULT_ENDPOINT,
-            systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, AppSettings.DEFAULT_SYSTEM_PROMPT) ?: AppSettings.DEFAULT_SYSTEM_PROMPT,
+            systemPrompt = systemPrompt,
             activeModelId = prefs.getString(KEY_ACTIVE_MODEL, AppSettings.DEFAULT_MODEL_CALLING_NAME)
                 ?: AppSettings.DEFAULT_MODEL_CALLING_NAME,
             titleModelId = prefs.getString(KEY_TITLE_MODEL, AppSettings.DEFAULT_TITLE_MODEL_CALLING_NAME)
@@ -51,6 +60,20 @@ class SettingsRepository(context: Context) {
             topP = prefs.getFloat(KEY_TOP_P, 0.7f).toDouble(),
             maxTokens = prefs.getInt(KEY_MAX_TOKENS, 4096),
             uiScale = prefs.getFloat(KEY_UI_SCALE, AppSettings.DEFAULT_UI_SCALE),
+            themeId = prefs.getString(KEY_THEME_ID, AppSettings.DEFAULT_THEME_ID)
+                ?: AppSettings.DEFAULT_THEME_ID,
+            customSeed = prefs.getInt(KEY_CUSTOM_SEED, AppSettings.DEFAULT_CUSTOM_SEED),
+            backgroundPath = prefs.getString(KEY_BACKGROUND_PATH, null),
+            backgroundDim = prefs.getFloat(KEY_BACKGROUND_DIM, AppSettings.DEFAULT_BACKGROUND_DIM),
+            floatingBars = prefs.getBoolean(KEY_FLOATING_BARS, true),
+            capsuleRadius = prefs.getFloat(KEY_CAPSULE_RADIUS, AppSettings.DEFAULT_CAPSULE_RADIUS)
+                .coerceIn(AppSettings.MIN_CAPSULE_RADIUS, AppSettings.MAX_CAPSULE_RADIUS),
+            capsuleBorder = prefs.getBoolean(KEY_CAPSULE_BORDER, false),
+            glassEnabled = prefs.getBoolean(KEY_GLASS_ENABLED, false),
+            glassAlpha = prefs.getFloat(KEY_GLASS_ALPHA, AppSettings.DEFAULT_GLASS_ALPHA),
+            glassBlurRadius = prefs.getFloat(KEY_GLASS_BLUR, AppSettings.DEFAULT_GLASS_BLUR),
+            translucentBars = prefs.getBoolean(KEY_TRANSLUCENT_BARS, false),
+            translucentAlpha = prefs.getFloat(KEY_TRANSLUCENT_ALPHA, AppSettings.DEFAULT_GLASS_ALPHA),
         )
     }
 
@@ -68,6 +91,19 @@ class SettingsRepository(context: Context) {
             .putFloat(KEY_TOP_P, s.topP.toFloat())
             .putInt(KEY_MAX_TOKENS, s.maxTokens)
             .putFloat(KEY_UI_SCALE, s.uiScale)
+            .putBoolean(KEY_UI_SCALE_AUTO, s.uiScaleAuto)
+            .putString(KEY_THEME_ID, s.themeId)
+            .putInt(KEY_CUSTOM_SEED, s.customSeed)
+            .putString(KEY_BACKGROUND_PATH, s.backgroundPath)
+            .putFloat(KEY_BACKGROUND_DIM, s.backgroundDim)
+            .putBoolean(KEY_FLOATING_BARS, s.floatingBars)
+            .putFloat(KEY_CAPSULE_RADIUS, s.capsuleRadius)
+            .putBoolean(KEY_CAPSULE_BORDER, s.capsuleBorder)
+            .putBoolean(KEY_GLASS_ENABLED, s.glassEnabled)
+            .putFloat(KEY_GLASS_ALPHA, s.glassAlpha)
+            .putFloat(KEY_GLASS_BLUR, s.glassBlurRadius)
+            .putBoolean(KEY_TRANSLUCENT_BARS, s.translucentBars)
+            .putFloat(KEY_TRANSLUCENT_ALPHA, s.translucentAlpha)
             .apply()
     }
 
@@ -75,7 +111,7 @@ class SettingsRepository(context: Context) {
     // 自定义模型管理
     // ------------------------------------------------------------------
 
-    fun addModel(name: String, callingName: String, apiKey: String, endpointUrl: String) {
+    fun addModel(name: String, callingName: String, apiKey: String, endpointUrl: String, multimodal: Boolean = false) {
         val cleanName = name.trim()
         val cleanCalling = callingName.trim()
         if (cleanName.isEmpty() || cleanCalling.isEmpty()) return
@@ -85,12 +121,13 @@ class SettingsRepository(context: Context) {
             callingName = cleanCalling,
             apiKey = apiKey.trim(),
             endpointUrl = endpointUrl.trim(),
+            multimodal = multimodal,
         )
         _models.value = next
         persistModels(next)
     }
 
-    fun updateModel(id: String, name: String, callingName: String, apiKey: String, endpointUrl: String) {
+    fun updateModel(id: String, name: String, callingName: String, apiKey: String, endpointUrl: String, multimodal: Boolean = false) {
         val cleanName = name.trim()
         val cleanCalling = callingName.trim()
         if (cleanName.isEmpty() || cleanCalling.isEmpty()) return
@@ -101,6 +138,7 @@ class SettingsRepository(context: Context) {
                     callingName = cleanCalling,
                     apiKey = apiKey.trim(),
                     endpointUrl = endpointUrl.trim(),
+                    multimodal = multimodal,
                 )
             } else {
                 it
@@ -153,6 +191,19 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOP_P = "top_p"
         private const val KEY_MAX_TOKENS = "max_tokens"
         private const val KEY_UI_SCALE = "ui_scale"
+    private const val KEY_UI_SCALE_AUTO = "ui_scale_auto"
+    private const val KEY_THEME_ID = "theme_id"
+    private const val KEY_CUSTOM_SEED = "theme_custom_seed"
+    private const val KEY_BACKGROUND_PATH = "theme_background_path"
+    private const val KEY_BACKGROUND_DIM = "theme_background_dim"
+    private const val KEY_FLOATING_BARS = "floating_bars"
+    private const val KEY_CAPSULE_RADIUS = "capsule_radius"
+    private const val KEY_CAPSULE_BORDER = "capsule_border"
+    private const val KEY_GLASS_ENABLED = "glass_enabled"
+    private const val KEY_GLASS_ALPHA = "glass_alpha"
+    private const val KEY_GLASS_BLUR = "glass_blur_radius"
+    private const val KEY_TRANSLUCENT_BARS = "translucent_bars"
+    private const val KEY_TRANSLUCENT_ALPHA = "translucent_alpha"
         private const val KEY_MODELS = "models"
 
         /** 预置模型列表。默认模型为 glm-4.7-flash。 */

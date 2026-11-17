@@ -17,4 +17,6 @@ data class ChatMessage(
     val isStreaming: Boolean = false,
     val isError: Boolean = false,
     val finishReason: String? = null,
+    /** 附带图片的本地路径（仅用于多模态模型） */
+    val imagePath: String? = null,
 )

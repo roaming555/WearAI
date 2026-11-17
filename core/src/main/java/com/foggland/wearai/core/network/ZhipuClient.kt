@@ -36,6 +36,9 @@ class ZhipuClient {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        // Android 5.x/6.x 的内置根证书库较旧，合并内置补充根证书后重试，
+        // 避免出现 "Trust anchor for certification path not found"。
+        .sslSocketFactory(TlsCompat.socketFactory, TlsCompat.trustManager)
         .build()
 
     // ---------------------------------------------------------------------
@@ -87,7 +90,7 @@ class ZhipuClient {
         }
         parsed.error?.let { throw IOException("${it.code}：${it.message}") }
         val message = parsed.choices.firstOrNull()?.message
-        val content = message?.content.orEmpty()
+        val content = (message?.content as? String).orEmpty()
         val reasoning = message?.reasoningContent.orEmpty()
         if (content.isNotEmpty() || reasoning.isNotEmpty()) {
             onDelta(content, reasoning)

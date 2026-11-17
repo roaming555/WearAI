@@ -100,6 +100,12 @@ class ChatViewModel(
 
     fun deleteConversation(id: String) {
         if (_isGenerating.value && _currentId.value == id) stop()
+        // 顺便清理该对话附带的图片，避免私有目录越积越多
+        _conversations.value.firstOrNull { it.id == id }?.messages?.forEach { message ->
+            message.imagePath?.let { path ->
+                runCatching { java.io.File(path).delete() }
+            }
+        }
         _conversations.update { list -> list.filterNot { it.id == id } }
         if (_currentId.value == id) {
             val next = _conversations.value.firstOrNull()?.id
@@ -114,15 +120,16 @@ class ChatViewModel(
     // 对话
     // ------------------------------------------------------------------
 
-    fun send(text: String) {
+    fun send(text: String, imagePath: String? = null) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isGenerating.value) return
+        if (trimmed.isEmpty() && imagePath == null) return
+        if (_isGenerating.value) return
         var conv = currentConversationValue()
         if (conv == null) {
             newConversation()
             conv = currentConversationValue() ?: return
         }
-        val newHistory = conv.messages + ChatMessage(role = ChatRole.USER, content = trimmed)
+        val newHistory = conv.messages + ChatMessage(role = ChatRole.USER, content = trimmed, imagePath = imagePath)
         updateCurrentConversation { it.copy(messages = newHistory) }
         startGeneration(newHistory)
     }
@@ -180,11 +187,25 @@ class ChatViewModel(
     // 标题自动生成
     // ------------------------------------------------------------------
 
+    /** 把对话创建时间格式化为「x月x日x时的对话」。 */
+    private fun dateTitleOf(createdAt: Long): String {
+        val c = java.util.Calendar.getInstance().apply { timeInMillis = createdAt }
+        return """${c.get(java.util.Calendar.MONTH) + 1}月${c.get(java.util.Calendar.DAY_OF_MONTH)}日${c.get(java.util.Calendar.HOUR_OF_DAY)}时的对话"""
+    }
+
     private fun requestTitleIfNeeded(convId: String) {
         if (convId.isEmpty()) return
         val conv = currentConversationValue() ?: return
         if (conv.id != convId) return
         if (conv.title != Conversation.DEFAULT_TITLE) return
+
+        // 选「无」：不调用 AI，用「对话创建时间」命名（x月x日x时的对话）
+        if (settings.value.titleModelId == AppSettings.TITLE_MODEL_NONE) {
+            updateConversationById(convId) { it.copy(title = dateTitleOf(it.createdAt)) }
+            persistConversations()
+            return
+        }
+
         if (!titleRequested.add(convId)) return
         val firstUser = conv.messages.firstOrNull { it.role == ChatRole.USER && it.content.isNotBlank() } ?: return
         val firstAssistant = conv.messages.firstOrNull { it.role == ChatRole.ASSISTANT && it.content.isNotBlank() } ?: return
@@ -263,15 +284,89 @@ class ChatViewModel(
 
     fun setDarkMode(enabled: Boolean) = settingsRepository.update { it.copy(darkMode = enabled) }
 
+    fun setThemeId(id: String) = settingsRepository.update { it.copy(themeId = id) }
+
+    fun setCustomSeed(argb: Int) = settingsRepository.update { it.copy(customSeed = argb) }
+
+    fun setBackground(path: String?) = settingsRepository.update { it.copy(backgroundPath = path) }
+
+    fun setBackgroundDim(dim: Float) =
+        settingsRepository.update { it.copy(backgroundDim = dim.coerceIn(0f, 0.9f)) }
+
+    fun setFloatingBars(enabled: Boolean) =
+        settingsRepository.update { it.copy(floatingBars = enabled) }
+
+    /** 手动调整界面尺寸：同时关闭自动适配 */
+    fun setUiScale(scale: Float) = settingsRepository.update {
+        it.copy(
+            uiScale = scale.coerceIn(AppSettings.MIN_UI_SCALE, AppSettings.MAX_UI_SCALE),
+            uiScaleAuto = false,
+        )
+    }
+
+    fun setUiScaleAuto(enabled: Boolean) =
+        settingsRepository.update { it.copy(uiScaleAuto = enabled) }
+
+    fun setCapsuleRadius(radius: Float) = settingsRepository.update {
+        it.copy(
+            capsuleRadius = radius.coerceIn(
+                AppSettings.MIN_CAPSULE_RADIUS,
+                AppSettings.MAX_CAPSULE_RADIUS,
+            ),
+        )
+    }
+
+    fun setCapsuleBorder(enabled: Boolean) =
+        settingsRepository.update { it.copy(capsuleBorder = enabled) }
+
+    fun setGlassEnabled(enabled: Boolean) =
+        settingsRepository.update { it.copy(glassEnabled = enabled) }
+
+    fun setGlassAlpha(alpha: Float) = settingsRepository.update {
+        it.copy(
+            glassAlpha = alpha.coerceIn(
+                AppSettings.MIN_GLASS_ALPHA,
+                AppSettings.MAX_GLASS_ALPHA,
+            ),
+        )
+    }
+
+    fun setGlassBlurRadius(radius: Float) = settingsRepository.update {
+        it.copy(
+            glassBlurRadius = radius.coerceIn(
+                AppSettings.MIN_GLASS_BLUR,
+                AppSettings.MAX_GLASS_BLUR,
+            ),
+        )
+    }
+
+    fun setTranslucentBars(enabled: Boolean) =
+        settingsRepository.update { it.copy(translucentBars = enabled) }
+
+    fun setTranslucentAlpha(alpha: Float) = settingsRepository.update {
+        it.copy(translucentAlpha = alpha.coerceIn(AppSettings.MIN_GLASS_ALPHA, AppSettings.MAX_GLASS_ALPHA))
+    }
+
     fun selectModel(id: String) = settingsRepository.update { it.copy(activeModelId = id) }
 
     fun setTitleModel(id: String) = settingsRepository.update { it.copy(titleModelId = id) }
 
-    fun addModel(name: String, callingName: String, apiKey: String, endpointUrl: String) =
-        settingsRepository.addModel(name, callingName, apiKey, endpointUrl)
+    fun addModel(
+        name: String,
+        callingName: String,
+        apiKey: String,
+        endpointUrl: String,
+        multimodal: Boolean = false,
+    ) = settingsRepository.addModel(name, callingName, apiKey, endpointUrl, multimodal)
 
-    fun updateModel(id: String, name: String, callingName: String, apiKey: String, endpointUrl: String) =
-        settingsRepository.updateModel(id, name, callingName, apiKey, endpointUrl)
+    fun updateModel(
+        id: String,
+        name: String,
+        callingName: String,
+        apiKey: String,
+        endpointUrl: String,
+        multimodal: Boolean = false,
+    ) = settingsRepository.updateModel(id, name, callingName, apiKey, endpointUrl, multimodal)
 
     fun deleteModel(id: String) = settingsRepository.deleteModel(id)
 
